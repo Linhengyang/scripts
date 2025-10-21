@@ -43,6 +43,7 @@
 
 
 import torch
+import torch.nn as nn
 from torch.optim import Optimizer
 
 
@@ -88,10 +89,13 @@ class MySGD(Optimizer):
 
 
 class MyAdam(Optimizer):
-    def __init__(self, params, lr=1e-3, betas=(0,9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False):
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False):
         if lr < 0: raise ValueError(f'learning rate must be positive. now {lr}')
         if betas[0] < 0 or betas[0] > 1: raise ValueError(f'beta1 must between 0-1. now {betas[0]}')
         if betas[1] < 0 or betas[1] > 1: raise ValueError(f'beta2 must between 0-1. now {betas[1]}')
+        if eps <= 0: raise ValueError(f'eps must be positive. now {eps}')
+        if weight_decay < 0: raise ValueError(f'weight_decay must 0 or positive. now {weight_decay}')
+
         defaults = {'lr':lr, 'betas':betas, 'eps':eps, 'weight_decay':weight_decay, 'amsgrad':amsgrad}
         super().__init__(params, defaults)
 
@@ -178,10 +182,13 @@ class MyAdam(Optimizer):
 # AdamW 已经替代了 Adam, 成为了标准做法!
 
 class AdamW(Optimizer):
-    def __init__(self, params, lr=1e-3, betas=(0,9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False):
+    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False):
         if lr < 0: raise ValueError(f'learning rate must be positive. now {lr}')
         if betas[0] < 0 or betas[0] > 1: raise ValueError(f'beta1 must between 0-1. now {betas[0]}')
         if betas[1] < 0 or betas[1] > 1: raise ValueError(f'beta2 must between 0-1. now {betas[1]}')
+        if eps <= 0: raise ValueError(f'eps must be positive. now {eps}')
+        if weight_decay < 0: raise ValueError(f'weight_decay must 0 or positive. now {weight_decay}')
+
         defaults = {'lr':lr, 'betas':betas, 'eps':eps, 'weight_decay':weight_decay, 'amsgrad':amsgrad}
         super().__init__(params, defaults)
 
@@ -256,3 +263,36 @@ class AdamW(Optimizer):
                     p.mul_(1 - lr*wd)
         
         return loss
+    
+
+
+
+
+if __name__ == "__main__":
+    model1 = nn.Linear(10, 1)
+    nn.init.zeros_(model1.weight)
+    nn.init.zeros_(model1.bias)
+    Opt1 = AdamW(model1.parameters(), lr=1e-3, weight_decay=1e-4)
+    Opt1.zero_grad()
+
+    loss_fn = nn.MSELoss()
+    x = torch.randn(32, 10)
+    y = torch.randn(32, 1)
+
+    model2 = nn.Linear(10, 1)
+    nn.init.zeros_(model2.weight)
+    nn.init.zeros_(model2.bias)
+    Opt2 = torch.optim.AdamW(model2.parameters(), lr=1e-3, weight_decay=1e-4)
+    Opt2.zero_grad()
+
+    l1 = loss_fn(model1(x), y)
+    l2 = loss_fn(model2(x), y)
+    l1.backward()
+    l2.backward()
+
+    Opt1.step()
+    Opt2.step()
+
+    print(model1.weight, model1.bias)
+    print('===========================')
+    print(model2.weight, model2.bias)
