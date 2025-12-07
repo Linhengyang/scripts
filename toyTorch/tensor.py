@@ -53,9 +53,32 @@ def precision_bf16():
     # min_normal_value = 00000001 for magnitude + 00..01 for mantisa
     # min_value = 00000000 for magnitude + 00..01 for mantisa = 2^(-261) = 1.18e-38
     x = torch.tensor([1e-8], dtype=torch.bfloat16)
-    assert x != 0
+    assert x != 0 # 和 fp16 不同, 1e-8 在 bf16 不会下溢
 
     assert x.element_size() == 2
 
 
 
+def get_info_floats():
+    fp32_info = torch.finfo(torch.float32)
+    fp16_info = torch.finfo(torch.float16)
+    bf16_info = torch.finfo(torch.bfloat16)
+
+    print(fp32_info, fp16_info, bf16_info)
+
+
+
+def precision_fp8():
+    # E4M3: 1 for sign + 4 for magnitude + 3 for mantisa
+    # maximum_value in IEEE标准 = 1110 for magnitude + 111 for mantisa = (1+7/8)*2^7 = 15*2^4 = 240
+    # 但实际上, 英伟达 征用了 INF 的指数 1111, 把 尾数 111 留给 INF, 从而 尾数 110 是最大值. bias 仍然是 7.
+    # maximum_value in FP8 = 1111 for magnitude + 110 for mantisa = (1+3/4)*2^8 = 448
+    
+    # E5M2: 1 for sign + 5 for magnitude + 2 for mantisa
+    # maximum_value in FP8 = 11110 for magnitude + 11 for mantisa = (1+3/4)*2^15 = 57344
+    # 也就是说 E5M2 用的是标准的 IEEE 规范(即指数全1留给INF)
+    pass
+
+
+def tensor_storage():
+    # 
