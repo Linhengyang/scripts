@@ -209,4 +209,23 @@ def tensors_on_gpu():
 
 def tensor_storage():
     # tensor 是指针: 指向 allocated memory of meta-data
-    # meta-data: 
+    # meta-data:
+    x = torch.tensor([
+        [0., 1, 2, 3],
+        [4, 5, 6, 7],
+        [8, 9, 10, 11],
+        [12, 13, 14, 15],
+    ])
+    # dtype/stride/shape
+    print(f'stride as {x.stride()}')
+    print(f'shape as {x.shape}')
+
+    # for this tensor, skip 1 in dim 0 <--> skip 4 in storage
+    assert x.stride(0) == 4
+    # for this tensor, skip 1 in dim 1 <--> skip 1 in storage
+    assert x.stride(1) == 1
+    # how to index an element? 如何定位一个元素, 比如给定位置 row 1, col 2
+    # 答: row / col 是 dim 0 / 1 上的 偏移量, 乘以 stride 0 / 1, 就得到在 storage 上的总偏移量
+    r, c = 1, 2
+    index = r * x.stride(0) + c * x.stride(1)
+    assert index == 6
