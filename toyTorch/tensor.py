@@ -80,6 +80,29 @@ def precision_fp8():
     pass
 
 
+def tensors_on_gpu():
+    # default tensors are stored in CPU memory
+    x = torch.zeros(32, 32)
+    assert x.device == torch.device('cpu')
+
+    # move tensor data from CPU 内存 到 GPU 显存(HBM/DRAM) through PCIe/NVLink 等
+
+    # 检测是否有 GPU
+    if not torch.cuda.is_available():
+        return
+    
+    # cuda device property: 一个硬件 device 的规格说明书
+    # 从驱动层查询到 GPU 硬件信息, 并以python友好的方式返回
+    property = torch.cuda.get_device_properties(0)
+
+    # 返回已经占用的 显存容量
+    memory_allocated = torch.cuda.memory_allocated()
+
+    # 复制 tensor 到 cuda device 0
+    y = x.to('cuda:0')
+
+    new_memory_allocated = torch.cuda.memory_allocated()
+    assert new_memory_allocated - memory_allocated == 32*32*4
 
 
 
@@ -185,4 +208,5 @@ def precision_fp8():
 
 
 def tensor_storage():
-    # 
+    # tensor 是指针: 指向 allocated memory of meta-data
+    # meta-data: 
