@@ -229,3 +229,23 @@ def tensor_storage():
     r, c = 1, 2
     index = r * x.stride(0) + c * x.stride(1)
     assert index == 6
+
+    # 对于大部分 tensor storage 上的 operation, 本质是 确定不同的 shape/stride 以 "改变" tensor 的view, storage 本身没有变化, 也没有 copy storage
+
+    # 辅助函数: 根据 tensor 的原始存储 data 指针, 确定两个 tensor 是否处于 同一内存storage
+    # 举例: 比如说 y 是 x 的另一种 view but share same storage, 那么 .storage() 方法会返回 原始storage
+    def same_storage(x: torch.Tensor, y: torch.Tensor):
+        return x.storage().data_ptr() == y.storage().data_ptr()
+
+    # permute/transpose/view/slice/等, 都是 "通过改变 shape/stride" 以改变视图, 没有改变 storage meta-data
+
+    # permute/transpose
+    y = x.T
+    assert same_storage(x, y)
+    
+    # re-view/
+    y = x.view(2, 4, 2)
+    assert same_storage(x, y)
+
+    # slice
+    y = x[[0, 2]]
