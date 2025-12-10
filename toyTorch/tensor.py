@@ -237,15 +237,34 @@ def tensor_storage():
     def same_storage(x: torch.Tensor, y: torch.Tensor):
         return x.storage().data_ptr() == y.storage().data_ptr()
 
-    # permute/transpose/view/slice/等, 都是 "通过改变 shape/stride" 以改变视图, 没有改变 storage meta-data
-
+    # permute/transpose/view/冒号slice/等, 都是 "通过改变 shape/stride" 以改变视图, 没有改变 storage meta-data
     # permute/transpose
     y = x.T
     assert same_storage(x, y)
     
-    # re-view/
+    # view/
     y = x.view(2, 4, 2)
     assert same_storage(x, y)
 
-    # slice
-    y = x[[0, 2]]
+    # 整数index/冒号slice 等 basic slicing 
+    y = y[:, 1:, 1:]
+    assert same_storage(x, y)
+
+    # ! advanced slicing 会触发 copy 创建新的 storage, 从而有新的 data_ptr
+    # gather/index_select/mask_select/张量或列表索引 等都是 advanced slicing
+
+    
+    # 检查 对 x 的 mutation 也会发生在 y 上: 因为 x 和 y share storage
+    x[0][0] = 100
+    assert y[0][0][0] == 100
+
+    # re-view 操作 虽说不改变 storage, 但可能使得 tensor 不再 连续(storage 必然是连续的)
+    # 比如 permute/transpose/basic slicing等
+    y = x[:, 1]
+    assert same_storage(x, y)
+    assert not y.is_contiguous() # y 虽然和 x 仍然share storage, 但 y 自身不再连续
+
+    try:
+        y.view(2, 2)
+    except RuntimeError as e:
+        assert "view for not continuos tensor error"
