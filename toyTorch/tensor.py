@@ -264,7 +264,9 @@ def tensor_storage():
     assert same_storage(x, y)
     assert not y.is_contiguous() # y 虽然和 x 仍然share storage, 但 y 自身不再连续
 
-    try:
-        y.view(2, 2)
-    except RuntimeError as e:
-        assert "view for not continuos tensor error"
+    # y 的 storage 不再连续之后, view 成其他形状时, 除非极少数情况下 stride/shape 符合要求, 不然大概率都是不行的
+
+    # 强制 storage 连续化, 会触发 copy
+    y = x[:, 1].contiguous()
+    assert same_storage(x, y)
+    
