@@ -270,3 +270,33 @@ def tensor_storage():
     y = x[:, 1].contiguous()
     assert same_storage(x, y)
     
+
+
+def tensor_elementwise():
+    # tensor 的运算之一: 逐元素计算, 并返回 output tensor as new
+    x = torch.tensor([1, 4, 9])
+
+    # torch.equal 和 == 操作符一样, 关注数值上的相等性
+    assert torch.equal(x.pow(2), torch.tensor([1, 16, 81]))
+    assert torch.equal(x.sqrt(), torch.tensor([1, 2, 3]))
+    assert torch.equal(x.rsqrt(), torch.tensor([1, 1/2, 1/3])) # x_i --> 1/sqrt(x_i)
+    assert torch.equal(x/0.5, torch.tensor([2, 8, 18]))
+    # operations on matrix
+    x = torch.ones(3, 3).triu() # 即 torch.triu(), 取上三角, 参数 diagonal 表达相对对角线的上移步数
+    
+
+def tensor_matmul():
+    # 矩阵乘法是 tensor 最关键的能力
+    x = torch.ones(4, 8, 16, 32)
+    w = torch.ones(32, 2)
+
+    y = x @ w
+    assert y.shape == torch.Size([4, 8, 16, 2])
+
+
+import jaxtyping
+def tensor_einops():
+    # Einstein Operations: 来自 爱因斯坦 summation notation: 命名维度,  并用维度的名字来定义操作
+    
+    # 维度命名方法: jaxtyping
+    x = jaxtyping.Float[torch.Tensor, 'batch seq heads hidden'] = torch.ones(2, 2, 1, 3)
