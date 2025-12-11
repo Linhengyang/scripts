@@ -293,10 +293,23 @@ def tensor_matmul():
     y = x @ w
     assert y.shape == torch.Size([4, 8, 16, 2])
 
-
-import jaxtyping
+import torch
+from jaxtyping import Float
+from einops import einsum
 def tensor_einops():
     # Einstein Operations: 来自 爱因斯坦 summation notation: 命名维度,  并用维度的名字来定义操作
     
     # 维度命名方法: jaxtyping
-    x = jaxtyping.Float[torch.Tensor, 'batch seq heads hidden'] = torch.ones(2, 2, 1, 3)
+    x : Float[torch.Tensor, 'batch seq heads hidden'] = torch.ones(2, 2, 1, 3)
+    
+
+    # einops 之 einsum: 通过指定 维度变换, 指定 矩阵乘法
+    x: Float[torch.Tensor, "batch seq1 hidden"] = torch.ones(2, 3, 4)
+    y: Float[torch.Tensor, "batch seq2 hidden"] = torch.ones(2, 3, 4)
+    # 操作: 计算 x @ y.T
+
+    # old way:
+    z = x @ y.transpose(-2, -1) # [B, seq1, h] @ [B, h, seq2] --> [B, seq1, seq2]
+
+    # einsum way: einsum 就是矩阵乘法, 具体执行乘法的
+    z = einsum(x, y, 'batch seq1 hidden, batch seq2 hidden -> batch seq1 seq2')
