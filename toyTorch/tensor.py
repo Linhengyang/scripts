@@ -300,12 +300,12 @@ def tensor_einops():
     # Einstein Operations: 来自 爱因斯坦 summation notation: 命名维度,  并用维度的名字来定义操作
     
     # 维度命名方法: jaxtyping
-    x : Float[torch.Tensor, 'batch seq heads hidden'] = torch.ones(2, 2, 1, 3)
+    x : Float[torch.Tensor, f'batch seq heads hidden'] = torch.ones(2, 2, 1, 3)
     
 
     # einops 之 einsum: 通过指定 维度变换, 指定 矩阵乘法
-    x: Float[torch.Tensor, "batch seq1 hidden"] = torch.ones(2, 3, 4)
-    y: Float[torch.Tensor, "batch seq2 hidden"] = torch.ones(2, 3, 4)
+    x: Float[torch.Tensor, f"batch seq1 hidden"] = torch.ones(2, 3, 4)
+    y: Float[torch.Tensor, f"batch seq2 hidden"] = torch.ones(2, 3, 4)
     # 操作: 计算 x @ y.T
 
     # old way:
