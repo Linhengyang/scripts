@@ -295,12 +295,12 @@ def tensor_matmul():
 
 import torch
 from jaxtyping import Float
-from einops import einsum
+import einops
 def tensor_einops():
     # Einstein Operations: 来自 爱因斯坦 summation notation: 命名维度,  并用维度的名字来定义操作
     
     # 维度命名方法: jaxtyping
-    x : Float[torch.Tensor, f'batch seq heads hidden'] = torch.ones(2, 2, 1, 3)
+    x : Float[torch.Tensor, f"batch seq heads hidden"] = torch.ones(2, 2, 1, 3)
     
 
     # einops 之 einsum: 通过指定 维度变换, 指定 矩阵乘法
@@ -311,5 +311,41 @@ def tensor_einops():
     # old way:
     z = x @ y.transpose(-2, -1) # [B, seq1, h] @ [B, h, seq2] --> [B, seq1, seq2]
 
-    # einsum way: einsum 就是矩阵乘法, 具体执行乘法的
-    z = einsum(x, y, 'batch seq1 hidden, batch seq2 hidden -> batch seq1 seq2')
+    # einsum way: 在 output dims 里没有申明 name 的dim被 summed over, 故此操作叫 einsum
+    z = einops.einsum(x, y, 'batch seq1 hidden, batch seq2 hidden -> batch seq1 seq2')
+    # 可以用 ... 代表 broadcast 的维度
+    z = einops.einsum(x, y, "... seq1 hidden, ... seq2 hidden -> ... seq1 seq2")
+
+    # torch 包装了 einsum, 不过 dim-naming 方式不同
+    z = torch.einsum('bsd,bld->bsl', x, y)
+
+
+
+    # einops 之 reduce: 用 sum/mean/min/max 等操作规约 a single dim
+    x: Float[torch.Tensor, f"batch seq hidden"] = torch.ones(2, 3, 4)
+
+    # old way:
+    z = x.sum(dim=-1) # reduce sum on last dim
+
+    # einops way:
+    z = einops.reduce(x, '... hidden -> ...', 'mean')
+
+
+
+    # einops 之 rearrange: 即 reshape, 比如这里把 last dim 8 拆成 2*4
+    x: Float[torch.Tensor, f"batch seq total_hidden"] = torch.ones(2, 3, 8)
+    # total_hidden = flattend of  num_heads * dim_head, num_heads =2, dim_head = 4
+    w: Float[torch.Tensor, f"dim_head out_dim"] = torch.ones(4, 4)
+
+    # old way:
+    x = x.reshape(2, 3, 2, 4)
+    x = x @ w
+    x = x.reshape(2, 3, 8)
+
+    # einops way: 代表 last 本来是 heads * hidden1, 现在要 拆开 且 heads = 2
+    x = einops.rearrange(x, '... (heads hidden1) -> ... heads hidden1', heads=2)
+    x = einops.einsum(x, w, '... hidden1, ... hidden2 -> ... hidden2')
+    # 代表 last two dim heads & hidden2 flatten 成一维
+    x = einops.rearrange(x, '... heads hidden2 -> ... (heads hidden2)')
+
+    
