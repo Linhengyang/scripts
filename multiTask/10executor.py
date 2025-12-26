@@ -2,11 +2,8 @@
 import os
 import itertools
 from concurrent.futures import ProcessPoolExecutor
-import time
-import random
 
 def process_fn(i):
-    time.sleep(random.random())
     print(f'执行 {i} in PID {os.getpid()}')
     return f'返回 {i} in PID {os.getpid()}'
 
