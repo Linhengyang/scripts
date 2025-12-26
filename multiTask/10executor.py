@@ -19,16 +19,7 @@ with ProcessPoolExecutor(3) as e:
 #     print(future.result())
 
 
-# 按完成顺序收集
+# 按完成顺序收集(注意不是提交顺序, 也不是子进程在console的打印顺序)
 from concurrent.futures import as_completed
 for future in as_completed(futures):
     print(future.result())
-
-# 执行 (6, 7, 8) in PID 16211
-# 执行 (0, 1, 2) in PID 16209
-# 执行 (9,) in PID 16211
-# 执行 (3, 4, 5) in PID 16210
-# 返回 (9,) in PID 16211
-# 返回 (6, 7, 8) in PID 16211
-# 返回 (3, 4, 5) in PID 16210
-# 返回 (0, 1, 2) in PID 16209
