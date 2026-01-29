@@ -19,6 +19,7 @@ def get_memory_usage(x: torch.Tensor):
     # .numel() 方法返回 基本元素数量
     # .element_size() 方法返回 单个基本元素 的所占 字节数量, 比如 FP32 --> 4字节, FP16 --> 2字节
     return x.numel() * x.element_size()
+# GPT-3 175B 模型中, embd_size = 12288, 这导致光是单层ffn中的升维矩阵 12288->12288*4 占用就高达 12288*12288*4*4 字节即 2.25GB
 
 
 
@@ -53,7 +54,7 @@ def precision_bf16():
     # min_normal_value = 00000001 for magnitude + 00..01 for mantisa
     # min_value = 00000000 for magnitude + 00..01 for mantisa = 2^(-261) = 1.18e-38
     x = torch.tensor([1e-8], dtype=torch.bfloat16)
-    assert x != 0 # 和 fp16 不同, 1e-8 在 bf16 不会下溢
+    assert x != 0 # 和 fp16 不同, 1e-8 在 bf16 不会下溢  ---> 用精度换表示范围，得到稳定性
 
     assert x.element_size() == 2
 
@@ -61,9 +62,11 @@ def precision_bf16():
 
 def get_info_floats():
     fp32_info = torch.finfo(torch.float32)
+# finfo(resolution=1e-06, min=-3.40282e+38, max=3.40282e+38, eps=1.19209e-07, smallest_normal=1.17549e-38, tiny=1.17549e-38)
     fp16_info = torch.finfo(torch.float16)
+# finfo(resolution=0.001, min=-65504, max=65504, eps=0.000976562, smallest_normal=6.10352e-05, tiny=6.10352e-05)
     bf16_info = torch.finfo(torch.bfloat16)
-
+# finfo(resolution=0.01, min=-3.38953e+38, max=3.38953e+38, eps=0.0078125, smallest_normal=1.17549e-38, tiny=1.17549e-38)
     print(fp32_info, fp16_info, bf16_info)
 
 
@@ -72,7 +75,7 @@ def precision_fp8():
     # E4M3: 1 for sign + 4 for magnitude + 3 for mantisa
     # maximum_value in IEEE标准 = 1110 for magnitude + 111 for mantisa = (1+7/8)*2^7 = 15*2^4 = 240
     # 但实际上, 英伟达 征用了 INF 的指数 1111, 把 尾数 111 留给 INF, 从而 尾数 110 是最大值. bias 仍然是 7.
-    # maximum_value in FP8 = 1111 for magnitude + 110 for mantisa = (1+3/4)*2^8 = 448
+    # maximum_value in FP8 = 1111 for magnitude + 110 for mantisa = (1+3/4)*2^8 = 448 --> 为了尽量扩大表示范围
     
     # E5M2: 1 for sign + 5 for magnitude + 2 for mantisa
     # maximum_value in FP8 = 11110 for magnitude + 11 for mantisa = (1+3/4)*2^15 = 57344
