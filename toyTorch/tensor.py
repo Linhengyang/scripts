@@ -136,10 +136,10 @@ def tensors_on_gpu():
 
 ## 
 # 利用 strides 和 在meta-data上的总偏移 num_steps 确定 index 位置:
-#   num_steps % strides[0] 得到的是 dimension 0 的 index, 余数 num_steps // strides[0] = num_step_expt_dim0
-#   num_step_expt_dim0 % strides[1] 得到的是 dimension 1 的 index, 余数 num_step_expt_dim0 // strides[1] = num_step_expt_dim01
+#   num_steps // [strides0] 得到的是 dimension 0 的 index, 余数 num_steps % strides[0] = num_step_expt_dim0
+#   num_step_expt_dim0 // strides[1] 得到的是 dimension 1 的 index, 余数 num_step_expt_dim0 % strides[1] = num_step_expt_dim01
 #   。。。
-#   num_step_expt_ % strides[-1] 得到的是 dimension -1 (最后一个维度) 的 index
+#   num_step_expt_ // strides[-1] 得到的是 dimension -1 (最后一个维度) 的 index
 
 
 ## 对于 non-overlapping 的 tensor data, shape 和 strides 之间存在一定的数字关系
@@ -297,11 +297,10 @@ def tensor_matmul():
     assert y.shape == torch.Size([4, 8, 16, 2])
 
 import torch
-from jaxtyping import Float
-import einops
 def tensor_einops():
     # Einstein Operations: 来自 爱因斯坦 summation notation: 命名维度,  并用维度的名字来定义操作
-    
+    from jaxtyping import Float
+    import einops
     # 维度命名方法: jaxtyping
     x : Float[torch.Tensor, f"batch seq heads hidden"] = torch.ones(2, 2, 1, 3)
     
