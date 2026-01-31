@@ -192,20 +192,20 @@ def tensors_on_gpu():
 # 有点绕, 首先总结 新 tensor 在第 i 维上, stride 是 s_i * step, 长度是 num_windows 个 新 sub-tensor.
 
 # 其次, 考虑不 permute 的unfold方法, 那么当 unfold 在 第i维, 过程应该是:
-# shape(d_i,...,d_n) / stride(s_i,...,s_n)  ------------unfold on dimension i------------> 
-# shape(num_windows, window_size, d_i+1,...d_n) / stride(s_i*step, s_i, s_i+1,...s_n)
+# size(d_i,...,d_n) / stride(s_i,...,s_n)  ------------unfold on dimension i------------> 
+# size(num_windows, window_size, d_i+1,...d_n) / stride(s_i*step, s_i, s_i+1,...s_n)
 # 这个过程很好理解, 即 d_i 维被拆分成了两个维度, 长度分别是 num_windows, window_size，stride 分别是 s_i*step, s_i
 
 # 但是 torch.unfold 对 unfold 的结果做了一个 额外的 permute:
-# shape(num_windows, window_size, d_i+1,...d_n) / stride(s_i*step, s_i, s_i+1,...s_n)  ------------permute------------>
-# shape(num_windows, d_i+1,...d_n, window_size) / stride(s_i*step, s_i+1,...s_n, s_i)
+# size(num_windows, window_size, d_i+1,...d_n) / stride(s_i*step, s_i, s_i+1,...s_n)  ------------permute------------>
+# size(num_windows, d_i+1,...d_n, window_size) / stride(s_i*step, s_i+1,...s_n, s_i)
 # 即把 新增的 窗口内维度 permute 到最后一维度
 
 # torch.unfold 总结:
 # unfold on dimension i with window size as size, step as step:  
-# shape(d0,..., d_i-1, d_i,  d_i+1,...,d_n) / stride(s_0,..., s_i-1, s_i,  s_i+1,...,s_n)   ------vanilla unfold on dim i------>
-# shape(d0,..., d_i-1, num_windows, window_size, d_i+1,...d_n) / stride(s_0,..., s_i-1, s_i*step, s_i, s_i+1,...s_n)  ------permute last dim------>
-# shape(d0,..., d_i-1, num_windows, d_i+1,...d_n, window_size) / stride(s_0,..., s_i-1, s_i*step, s_i+1,...s_n, s_i)
+# size(d0,..., d_i-1, d_i,  d_i+1,...,d_n) / stride(s_0,..., s_i-1, s_i,  s_i+1,...,s_n)   ------vanilla unfold on dim i------>
+# size(d0,..., d_i-1, num_windows, window_size, d_i+1,...d_n) / stride(s_0,..., s_i-1, s_i*step, s_i, s_i+1,...s_n)  ------permute last dim------>
+# size(d0,..., d_i-1, num_windows, d_i+1,...d_n, window_size) / stride(s_0,..., s_i-1, s_i*step, s_i+1,...s_n, s_i)
 
 
 def tensor_storage():
@@ -217,9 +217,9 @@ def tensor_storage():
         [8, 9, 10, 11],
         [12, 13, 14, 15],
     ])
-    # dtype/stride/shape
+    # dtype/stride/size
     print(f'stride as {x.stride()}')
-    print(f'shape as {x.shape}')
+    print(f'size as {x.size()}')
 
     # for this tensor, skip 1 in dim 0 <--> skip 4 in storage
     assert x.stride(0) == 4
@@ -231,14 +231,14 @@ def tensor_storage():
     index = r * x.stride(0) + c * x.stride(1)
     assert index == 6
 
-    # 对于大部分 tensor storage 上的 operation, 本质是 确定不同的 shape/stride 以 "改变" tensor 的view, storage 本身没有变化, 也没有 copy storage
+    # 对于大部分 tensor storage 上的 operation, 本质是 确定不同的 size/stride 以 "改变" tensor 的view, storage 本身没有变化, 也没有 copy storage
 
     # 辅助函数: 根据 tensor 的原始存储 data 指针, 确定两个 tensor 是否处于 同一内存storage
     # 举例: 比如说 y 是 x 的另一种 view but share same storage, 那么 .storage() 方法会返回 原始storage
     def same_storage(x: torch.Tensor, y: torch.Tensor):
         return x.storage().data_ptr() == y.storage().data_ptr()
 
-    # permute/transpose/view/冒号slice/等, 都是 "通过改变 shape/stride" 以改变视图, 没有改变 storage meta-data
+    # permute/transpose/view/冒号slice/等, 都是 "通过改变 size/stride" 以改变视图, 没有改变 storage meta-data
     # permute/transpose
     y = x.T
     assert same_storage(x, y)
@@ -247,12 +247,14 @@ def tensor_storage():
     y = x.view(2, 4, 2)
     assert same_storage(x, y)
 
-    # 整数index/冒号slice 等 basic slicing 
+    # 整数index/冒号slice 等 basic slicing, 也是不改变 storage meta-datga.
+    # 冒号slice本质就是给start_point加一个偏移量（以及给end_point加一个偏移量）而size和stride不变
     y = y[:, 1:, 1:]
     assert same_storage(x, y)
 
     # ! advanced slicing 会触发 copy 创建新的 storage, 从而有新的 data_ptr
     # gather/index_select/mask_select/张量或列表索引 等都是 advanced slicing
+    # 因为这些slicing/indexing操作不是start_point/end_point/size/stride就能实现的, 所以会创建新的storage
 
     
     # 检查 对 x 的 mutation 也会发生在 y 上: 因为 x 和 y share storage
@@ -274,7 +276,7 @@ def tensor_storage():
 
 
 def tensor_elementwise():
-    # tensor 的运算之一: 逐元素计算, 并返回 output tensor as new
+    # tensor 的运算之一: 逐元素计算, 并返回 output tensor in new storage
     x = torch.tensor([1, 4, 9])
 
     # torch.equal 和 == 操作符一样, 关注数值上的相等性
@@ -303,7 +305,7 @@ def tensor_einops():
     x : Float[torch.Tensor, f"batch seq heads hidden"] = torch.ones(2, 2, 1, 3)
     
 
-    # einops 之 einsum: 通过指定 维度变换, 指定 矩阵乘法
+    # einops 之 einsum: 通过指定 维度变换, 指定 矩阵乘法, 即指示维度标记的矩阵乘法
     x: Float[torch.Tensor, f"batch seq1 hidden"] = torch.ones(2, 3, 4)
     y: Float[torch.Tensor, f"batch seq2 hidden"] = torch.ones(2, 3, 4)
     # 操作: 计算 x @ y.T
@@ -330,6 +332,8 @@ def tensor_einops():
     # einops way:
     z = einops.reduce(x, '... hidden -> ...', 'mean')
 
+    # torch 没有包装 einops 之 reduce. 使用sum/mean/min/max等
+
 
 
     # einops 之 rearrange: 即 reshape, 比如这里把 last dim 8 拆成 2*4
@@ -348,4 +352,19 @@ def tensor_einops():
     # 代表 last two dim heads & hidden2 flatten 成一维
     x = einops.rearrange(x, '... heads hidden2 -> ... (heads hidden2)')
 
-    
+    # torch 没有包装 einops 之 rearrange. 使用 view/reshape/unfold等
+
+
+
+
+
+
+
+# 浮点算力 FLOPs 和 FLOP/s
+
+# 硬件的浮点算力
+a100_flop_per_sec = 312e12
+h100_flop_per_sec = 1979e12 / 2 # 对于稀疏tensor, 单卡h100的浮点算力是 1979e12; 对于普通的稠密tensor, 单卡h100的浮点算力打对折
+
+# 8 H100s for 2 weeks
+total_flops_2weeks = 8 * (7 * 24 * 60 * 60) * h100_flop_per_sec
