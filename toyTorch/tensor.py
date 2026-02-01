@@ -460,3 +460,59 @@ assert type(w.data) == torch.Tensor  # Access the underlying tensor
 
 x = nn.Parameter(torch.randn(input_dim))
 output = x @ w
+
+# ---> 发现 output 的元素值比较极端, 有些值很大. 原因是 input_dim 高维导致随机偏差可能累加到很高.
+# Large values can cause gradients to blow up and cause training to be unstable
+
+# 初始化时自带 scale
+import math
+w = nn.Parameter(torch.randn(input_dim, output_dim) / math.sqrt(input_dim))
+output = x @ w
+# ---> output 的元素值平稳了非常多
+# ------> Xavier initialization
+
+# 还可以添加 truncate 正太分布的方式, 来避免极端大值
+w = nn.Parameter(nn.init.trunc_normal_(torch.empty(input_dim, output_dim), std=1 / math.sqrt(input_dim), a=-3, b=3))
+
+
+
+# model from scratch
+class Linear(nn.Module):
+    """Simple linear layer."""
+    def __init__(self, input_dim: int, output_dim: int):
+        super().__init__()
+        self.weight = nn.Parameter(torch.randn(input_dim, output_dim) / math.sqrt(input_dim))
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x @ self.weight
+    
+
+class Cruncher(nn.Module):
+    def __init__(self, dim: int, num_layers: int):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            Linear(dim, dim)
+            for i in range(num_layers)
+        ])
+        self.final = Linear(dim, 1)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Apply linear layers
+        B, D = x.size()
+        for layer in self.layers:
+            x = layer(x)
+        # Apply final head
+        x = self.final(x)
+        assert x.size() == torch.Size([B, 1])
+        # Remove the last dimension
+        x = x.squeeze(-1)
+        assert x.size() == torch.Size([B])
+        return x
+
+import numpy as np
+# 从 1D array data 中, 随机采样 batch_size 条 长度为 sequence_length 的序列, 组成 [batch_size, sequence_length]的sample
+def get_batch(data: np.array, batch_size: int, sequence_length: int, device: str) -> torch.Tensor:
+    # Sample batch_size random positions into data.
+    start_indices = torch.randint(low=0, high=len(data) - sequence_length, size=(batch_size,))
+    assert start_indices.size() == torch.Size([batch_size])
+    # Index into the data.
+    x = torch.tensor([data[start:start + sequence_length] for start in start_indices])
+    assert x.size() == torch.Size([batch_size, sequence_length])
