@@ -238,7 +238,7 @@ def tensor_storage():
     def same_storage(x: torch.Tensor, y: torch.Tensor):
         return x.storage().data_ptr() == y.storage().data_ptr()
 
-    # permute/transpose/view/冒号slice/等, 都是 "通过改变 size/stride" 以改变视图, 没有改变 storage meta-data
+    # permute/transpose/view/冒号slice/unfold等, 都是 "通过改变 size/stride" 以改变视图, 没有改变 storage meta-data
     # permute/transpose
     y = x.T
     assert same_storage(x, y)
@@ -362,13 +362,101 @@ def tensor_einops():
 
 # 浮点算力 FLOPs 和 FLOP/s
 
-# 硬件的浮点算力
-a100_flop_per_sec = 312e12
+# 硬件的浮点算力(FP16/BF16, FP32要打折)
+a100_flop_per_sec = 312e12 # for FP16 / BF16
 h100_flop_per_sec = 1979e12 / 2 # 对于稀疏tensor, 单卡h100的浮点算力是 1979e12; 对于普通的稠密tensor, 单卡h100的浮点算力打对折
+
+# 具体来说, fp32/fp16&bf16 各设备的 FLOP/s 如下:
+def get_promised_flop_per_sec(device: str, dtype: torch.dtype) -> float:
+    """Return the peak FLOP/s for `device` operating on `dtype`."""
+    if not torch.cuda.is_available():
+        # No CUDA device available, so can't get FLOP/s.
+        return 1
+    properties = torch.cuda.get_device_properties(device)
+    if "A100" in properties.name:
+        # https://www.nvidia.com/content/dam/en-zz/Solutions/Data-Center/a100/pdf/nvidia-a100-datasheet-us-nvidia-1758950-r4-web.pdf")
+        if dtype == torch.float32:
+            return 19.5e12
+        if dtype in (torch.bfloat16, torch.float16):
+            return 312e12
+        raise ValueError(f"Unknown dtype: {dtype}")
+    if "H100" in properties.name:
+        # https://resources.nvidia.com/en-us-tensor-core/nvidia-tensor-core-gpu-datasheet")
+        if dtype == torch.float32:
+            return 67.5e12
+        if dtype in (torch.bfloat16, torch.float16):
+            return 1979e12 / 2  # 1979 is for sparse, dense is half of that
+        raise ValueError(f"Unknown dtype: {dtype}")
+    raise ValueError(f"Unknown device: {device}")
 
 # 8 H100s for 2 weeks
 total_flops_2weeks = 8 * (7 * 24 * 60 * 60) * h100_flop_per_sec
 
 
 # 运算需要的浮点计算
-# 线性模型
+# 线性模型(矩阵乘法)
+
+def time_matmul(a: torch.Tensor, b: torch.Tensor) -> float:
+    import timeit
+    """Return the number of seconds required to perform `a @ b`."""
+    # Wait until previous CUDA threads are done
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    def run():
+        # Perform the operation
+        a @ b
+        # Wait until CUDA threads are done
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+    # Time the operation `num_trials` times
+    num_trials = 5
+    total_time = timeit.timeit(run, number=num_trials)
+    return total_time / num_trials
+
+# 矩阵乘法 X[B, D] @ Y[D, K] 的 FLOPs 是 2*B*D*K
+# 因为 Z[B, K] = X @ Y 里, Z[i, k] = sum(X[i, j]*Y[j, k]) 即 2*D 次FLOPs
+
+# element-wise operation on A[M, N] 的 FLOPs 是 O(M*N), 矩阵加法 on Matrix[M, N] 的 FLOPs 是 O(M*N)
+# ----> 深度学习中, 矩阵乘法是浮点计算的大头
+
+
+
+# MFU = (actual FLOP/s) / (promised FLOP/s) [ignore communication/overhead]
+# 一般来说, MFU of >= 0.5 就很好了 (矩阵乘法占比越大, MFU越高; 一般来说其他条件相同时, bf16的MFU > fp32的MFU)
+
+
+# 矩阵乘法dominate:
+# h0[B, D] --w1[D, D]--> h1[B, D] --w2[D, K]--> h2[B, K] --label--> loss
+
+# 前向forward pass: 2*B*D*D + 2*B*D*K
+
+# 那么反向 backward 呢? 根据 chain rule:
+# h2.grad = d loss / d h2
+# w2.grad = d loss / d w2 = d h2 / d w2 @ d loss / d h2 = h1' @ h2.grad
+# h1.grad = d loss / d h1 = d loss / d h2 @ d h2 / d h1 = h2.grad @ w2'
+# w1.grad = d loss / d w1 = d h1 / d w1 @ d loss / d h1 = x' @ h1.grad
+# h0.grad = d loss / d h0 = d loss / d h1 @ d h1 / d h0 = h1.grad @ w1'
+
+# FLOPs for w2.grad is 2*D*B*K, for h1.grad is 2*B*K*D
+# FLOPs for w1.grad is 2*D*B*D, for h0.grad is 2*B*D*D
+
+# ---> 由于链式法则, 反向传播的矩阵乘法运算是前向的两倍
+
+
+
+
+
+
+
+from torch import nn as nn
+# Parameter initialization 参数初始化
+
+input_dim = 16384
+output_dim = 32
+# Model parameters are stored in PyTorch as nn.Parameter objects.
+w = nn.Parameter(torch.randn(input_dim, output_dim))
+assert isinstance(w, torch.Tensor)  # Behaves like a tensor, nn.Parameter 是 Tensor 的子类
+assert type(w.data) == torch.Tensor  # Access the underlying tensor
+
+x = nn.Parameter(torch.randn(input_dim))
+output = x @ w
