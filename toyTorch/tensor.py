@@ -448,8 +448,20 @@ def time_matmul(a: torch.Tensor, b: torch.Tensor) -> float:
 
 
 
+
+
+
+
 from torch import nn as nn
 # Parameter initialization 参数初始化
+
+# random seed: 随机种子可能出现在三个层面, 分别是 torch、numpy、python的random库
+# 一次性全给它set down determinism, 这样 debug 方便
+seed = 0
+torch.manual_seed(seed)
+np.random.seed(seed)
+import random
+random.seed(seed)
 
 input_dim = 16384
 output_dim = 32
@@ -494,8 +506,9 @@ class Cruncher(nn.Module):
             for i in range(num_layers)
         ])
         self.final = Linear(dim, 1)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        # Apply linear layers
+        # x: [B, D]
         B, D = x.size()
         for layer in self.layers:
             x = layer(x)
@@ -507,6 +520,39 @@ class Cruncher(nn.Module):
         assert x.size() == torch.Size([B])
         return x
 
+
+def custm_model():
+    D = 64
+    num_layers = 2
+    model = Cruncher(D, num_layers)
+
+    param_sizes = [
+        (name, param.numel()) for name, param in model.state_dict.items()
+    ]
+
+    # Cruncher模型逐层打印
+    assert param_sizes == [
+        ("layers.0.weight", D*D),
+        ("layers.1.weight", D*D),
+        ("final.weight", D),
+    ]
+
+    # 移动模型到 N卡
+    device = torch.device('cuda:0')
+    model = model.to(device)
+
+    # test run batch
+    B = 8
+    x = torch.randn(B, D, device=device)
+    y = model(x)
+    # 输出 shape 为 [B,]
+    assert y.size() == torch.Size([B])
+
+
+
+
+
+
 import numpy as np
 # 从 1D array data 中, 随机采样 batch_size 条 长度为 sequence_length 的序列, 组成 [batch_size, sequence_length]的sample
 def get_batch(data: np.array, batch_size: int, sequence_length: int, device: str) -> torch.Tensor:
@@ -516,3 +562,14 @@ def get_batch(data: np.array, batch_size: int, sequence_length: int, device: str
     # Index into the data.
     x = torch.tensor([data[start:start + sequence_length] for start in start_indices])
     assert x.size() == torch.Size([batch_size, sequence_length])
+
+
+# 向量数据的序列化和加载
+orig_data = np.array([1,2,3,4,5,6,7,8,9,10], dtype=np.int32)
+# 序列化并保存
+orig_data.tofile("data.npy")
+# 加载(lazy按需加载)
+data = np.memmap("data.npy", dtype=np.int32)
+assert np.array_equal(data, orig_data)
+
+x = get_batch(data, batch_size=2, sequence_length=4, device=torch.device('cuda:0'))
