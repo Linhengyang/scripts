@@ -573,3 +573,166 @@ data = np.memmap("data.npy", dtype=np.int32)
 assert np.array_equal(data, orig_data)
 
 x = get_batch(data, batch_size=2, sequence_length=4, device=torch.device('cuda:0'))
+
+
+from typing import Iterable
+# 优化器
+class SGD(torch.optim.Optimizer):
+    def __init__(self, params:Iterable[nn.Parameter], lr:float=0.01):
+        defaults = dict(lr=lr)
+        super().__init__(params, defaults)
+    
+    @torch.no_grad()
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+        
+        # Optimizer类会根据 __init__ 中的 params 自动生成成员对象 param_groups: list of dict as {'params':Iterable[nn.Parameter], 'lr':float}
+        for group  in self.param_groups:
+            for p in group['params']:
+                if p.grad is not None:
+                    grad = p.grad.data
+                    p.data -= group['lr']*grad # 取 .data 进行数据更新
+        return loss
+    
+
+
+
+class AdaGrad(torch.optim.Optimizer):
+    def __init__(self, params:Iterable[nn.Parameter], lr:float=0.01):
+        defaults = dict(lr=lr)
+        super().__init__(params, defaults)
+    
+    def step(self, closure=None):
+        loss = None
+        if closure is not None:
+            with torch.enable_grad():
+                loss = closure()
+        
+        for group in self.param_groups:
+            for p in group['params']:
+                lr = group['lr'] # 从 group 中取出 lr
+                if p.grad is not None:
+                    grad = p.grad.data
+                    # Optimizer类把参数 nn.Parameter类对应的状态值, 存储在成员对象 state: self.state[p] which is state of p
+                    state = self.state[p]
+                    # p对应的state是一个dict
+
+                    # 当某个状态不存在时, 初始化它
+                    if 'g2' not in state:
+                        state['g2'] = torch.zeros_like(grad)
+                    
+                    # 更新p对应的状态
+                    state['g2'] += torch.square(grad)
+
+                    # 更新 p: p <- p - lr*grad / sqrt(g2)
+                    p.data -= lr*grad / torch.sqrt(state['g2']+1e-5)
+        return loss
+    
+
+
+
+def optimizer():
+    B = 2
+    D = 4
+    num_layers = 2
+    model = Cruncher(dim=D, num_layers=num_layers).to(torch.device('cuda:0'))
+
+    optimizer = AdaGrad(model.parameters(), lr=0.01)
+
+    state = model.state_dict()
+
+    # test run
+    x = torch.randn(B, D, device=torch.device('cuda:0'))
+    y = torch.tensor([4., 5.], device=torch.device('cuda:0'))
+
+    pred_y = model(x)
+    loss = nn.functional.mse_loss(input=pred_y, target=y)
+    loss.backward()
+
+    # one step
+    optimizer.step()
+    state = model.state_dict()
+
+    # free up the memory
+    optimizer.zero_grad(set_to_none=True) # 梯度 grad 设为 None
+
+
+
+    # 尝试对模型和优化器作 memory accounting
+
+    # 参数量
+    def get_num_parameters(model: nn.Module) -> int:
+        return sum(param.numdel() for param in model.parameters())
+    
+    assert get_num_parameters(model) == (D*D)*num_layers + D
+    num_parameters = (D*D)*num_layers + D
+
+    # 激活值数量 x[B, D] --layer1--> h1[B, D] --layer2--> h2[B, D] --final--> output[B,]
+    num_activations = B*D*num_layers
+
+    # 梯度
+    num_gradients = num_parameters
+
+    # 优化器状态
+    num_optimizer_states = num_parameters
+
+    # 总量(in bytes, 考虑 fp32)
+    total_memory = 4 * (num_parameters + num_activations + num_gradients + num_optimizer_states)
+
+    # FLOPs 计算
+    flops_need = 6*B*num_parameters
+
+
+
+
+def train_loop():
+    B = 4
+    D = 16
+
+    true_w = torch.arange(D, dtype=torch.float32, device=torch.device('cuda:0'))
+
+    def get_batch(B: int):
+        x = torch.randn(B, D).to(torch.device('cuda:0'))
+        true_y = x @ true_w
+
+        return (x, true_y)
+    
+    def train(num_train_steps):
+        model = Cruncher(dim=D, num_layers=2).to(torch.device('cuda:0'))
+        optimizer = SGD(model.parameters(), lr=0.01)
+
+        for t in range(num_train_steps):
+            optimizer.zero_grad(set_to_none=False)
+
+
+            x, y = get_batch(B)
+
+            pred_y = model(x)
+            loss = nn.functional.mse_loss(pred_y, y)
+
+            loss.backward()
+
+            optimizer.step()
+
+    train(10)
+
+
+
+
+# checkpoints
+model = Cruncher(dim=64, num_layers=3).to(torch.device('cuda:0'))
+optim = AdaGrad(model.parameters(), lr=0.01)
+
+# checkpoint 分为模型部分+优化器部分, 二者都用 .state_dict() 方法来保存
+checkpoint = {
+    'model': model.state_dict(),
+    'optimizer': optim.state_dict()
+}
+
+torch.save(checkpoint, 'model_checkpoint.pt')
+
+# load checkpoint
+loaded_checkpoint = torch.load('model_checkpoint.pt')
