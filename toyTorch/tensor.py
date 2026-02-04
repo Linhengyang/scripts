@@ -549,7 +549,13 @@ def custm_model():
     assert y.size() == torch.Size([B])
 
 
+# Host to Device 数据传输
+# Host(CPU)在管理内存时, 操作系统OS设计了 page-memory(分页内存、虚拟内存), 即cpu计算线程只能接触到虚拟内存地址(page-memory)而不是物理内存
+# 相应的数据可能在物理内存上, 也可能被OS交换(swap)到硬盘上. 故而正常情况下, 对CPU-memory数据的交互(读取or写入)的内存地址都是虚拟地址.
 
+# Device(GPU)在管理显存时, 显存是一个统一、GPU独占的地址空间, 
+
+# HtoD 数据传输, 大体流向是从 CPU-memory(DRAM, maybe paged) ---DMA---> GPU-memory(VRAM). 但是 DMA
 
 
 
