@@ -555,7 +555,12 @@ def custm_model():
 
 # Device(GPU)在管理显存时, 显存是一个统一、GPU独占的地址空间, 
 
-# HtoD 数据传输, 大体流向是从 CPU-memory(DRAM, maybe paged) ---DMA---> GPU-memory(VRAM). 但是 DMA
+# HtoD 数据传输, 大体流向是从 CPU-memory(DRAM after virtualization) ---DMA---> GPU-memory(VRAM). 但是 DMA 需要固定的非虚拟的物理内存地址
+# 所以 HtoD 传输具体是这样的: 对于在 CPU-memory 上的data, 首先要拷贝到页锁定内存(无论是否被swap到硬盘), 即一块物理内存地址固定的缓冲区.
+# 这个过程需要cpu干预(确认地址、拷贝数据等操作)， GPU即使空闲了也要等待cpu完成这步搬运缓冲的工作, 然后才能DMA访问缓冲区开始HtoD传输.
+# CPU-memory 可以分配 pin memory 区域, 即直接开辟固定物理地址、不会被swap到硬盘的缓冲区来使用.
+# 它避开了OS的虚拟内存, 直接由驱动管理, 而显存控制器可以在GPU计算时, 依然响应写入请求, DMA访问pin memory区域以得到数据.
+# 不过pin memory+DMA 只是解决了同步阻塞问题, 具体在执行时当然需要 显存VRAM 有足够的缓冲区可以写入数据. 如果空间不够, 可能会造成显存OOM, 亦或是背压等待空间
 
 
 
