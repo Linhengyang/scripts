@@ -560,8 +560,8 @@ def custm_model():
 # 这个过程需要cpu干预(确认地址、拷贝数据等操作)， GPU即使空闲了也要等待cpu完成这步搬运缓冲的工作, 然后才能DMA访问缓冲区开始HtoD传输.
 # CPU-memory 可以分配 pin memory 区域, 即直接开辟固定物理地址、不会被swap到硬盘的缓冲区来使用.
 # 它避开了OS的虚拟内存, 直接由驱动管理, 而显存控制器可以在GPU计算时, 依然响应写入请求, DMA访问pin memory区域以得到数据.
-# 不过pin memory+DMA 只是解决了同步阻塞问题, 具体在执行时当然需要 显存VRAM 有足够的缓冲区可以写入数据. 如果空间不够, 可能会造成显存OOM, 亦或是背压等待空间
-
+# 不过pin memory+DMA 只是解决了同步阻塞问题, 具体在执行时当然需要 显存VRAM 有足够的缓冲区可以写入数据. 如果空间不够, 可能会造成显存OOM, 亦或是触发背压机制等待足够空间
+# --> Host侧把data放到pin memory, Device侧分配 B1 区域和 B2 区域(B1和B2都足够存储1batch数据). 当GPU计算 B1 区域的批数据时, B2 区域写入从Host pin memory搬运的下一批
 
 
 import numpy as np
