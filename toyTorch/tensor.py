@@ -18,7 +18,7 @@ def tensor_basic():
 def get_memory_usage(x: torch.Tensor):
     # .numel() 方法返回 基本元素数量
     # .element_size() 方法返回 单个基本元素 的所占 字节数量, 比如 FP32 --> 4字节, FP16 --> 2字节
-    return x.numel() * x.element_size()
+    return x.storage().size() * x.element_size()
 # GPT-3 175B 模型中, embd_size = 12288, 这导致光是单层ffn中的升维矩阵 12288->12288*4 占用就高达 12288*12288*4*4 字节即 2.25GB
 
 
